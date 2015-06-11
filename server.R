@@ -1,14 +1,14 @@
 library(dplyr)
-library(ggplot2)
 library(reshape2)
 library(lpSolve)
 library(RColorBrewer)
 library(ggplot2)
 library(shiny)
 library(queueing)
+library(xtable)
 
 # Reactive Data
-# load.df
+# results.df
 # shifts.df
 # solutions.df
 #
@@ -25,9 +25,23 @@ shinyServer(function(input, output) {
 
 
     #Construct the shifts based on inputs
-    load.df <- reactive({
+    results.df <- reactive({
       waiting_time <- input$waiting_time
       service_rate <- input$service_rate
+      arrivals <- unlist(read.csv(input$file$datapath,header=F))
+      Weekday <- factor(c('Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'),
+                        levels = c('Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'))
+      Hour = factor(c('0:00','0:30','1:00','1:30','2:00','2:30','3:00','3:30','4:00','4:30',
+                      '5:00','5:30','6:00','6:30','7:00','7:30','8:00','8:30','9:00','9:30',
+                      '10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30','14:00',
+                      '14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30',
+                      '19:00','19:30','20:00','20:30','21:00','21:30','22:00','22:30','23:00',
+                      '23:30'),levels = c('0:00','0:30','1:00','1:30','2:00','2:30','3:00','3:30','4:00','4:30',
+                                    '5:00','5:30','6:00','6:30','7:00','7:30','8:00','8:30','9:00','9:30',
+                                    '10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30','14:00',
+                                    '14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30',
+                                    '19:00','19:30','20:00','20:30','21:00','21:30','22:00','22:30','23:00',
+                                    '23:30'))
 
       opt_servers <- vector(mode="integer",length(arrivals))
       Wq <- vector(mode="numeric",length(arrivals))
@@ -51,8 +65,7 @@ shinyServer(function(input, output) {
         Wq[i] <- mmc_Wq
         i <- i + 1
       }
-
-      data.frame(Arrival_Rate = arrivals,Servers = opt_servers,Wq)
+      data.frame(Weekday=rep(Weekday,each=24),Hour=rep(0:23,7),Arrival_Rate = arrivals,Servers = opt_servers,Wq)
     })
 
 
@@ -62,14 +75,12 @@ shinyServer(function(input, output) {
 
     shifts.df <- reactive({
         span <- 168
-        start <- as.numeric(input$start)
-
 
         if(is.null(input$file))     return(NULL)
         if(length(unlist(read.csv(input$file$datapath,header = F))) != span)    return(NULL)
 
         shift.length <- as.numeric(input$shift.length)
-        load <- output$load.df()$Servers
+
 
 
         #construct shift matrices
@@ -88,10 +99,6 @@ shinyServer(function(input, output) {
         rm(i)
         dimnames(shifts) <- NULL
 
-        #reduce to selected start times
-        select <- as.numeric(c(input$start1,input$start2,input$start3,input$start4,
-                               input$start5,input$start6,input$start7))
-        shifts <- shifts[,select]
         shifts
 
     })
@@ -110,7 +117,7 @@ shinyServer(function(input, output) {
 
 
         shift.length <- as.numeric(input$shift.length)
-        load <- unlist(read.csv(input$file$datapath,header = F))
+        load <- results.df()$Servers
 
         #Construct LP matrices
         #
@@ -123,20 +130,22 @@ shinyServer(function(input, output) {
         shifts <- shifts.df()
 
         #diag is slack variable
-        lhs <- cbind(shifts,diag(1,nrow(shifts)))
+        lhs <- shifts
 
         oper <- rep('>=',nrow(shifts))
 
         rhs <- as.numeric(load)
 
-        obj <- rep(0:1,each = ncol(shifts))
+        obj <- rep(1,ncol(shifts))
 
         int <- 1:ncol(shifts)
 
         #Solve LP
-        lp.model <- lp(direction = 'min',obj,lhs,oper,rhs,transpose.constraints = T,int)
-        solutions <- lp.model$solution[1:ncol(shifts)]
-        solutions
+        lp.model <- lp(direction = 'min',obj,lhs,oper,rhs,transpose.constraints = T,all.int=TRUE,compute.sens=0)
+        #lp.model <- Rglpk_solve_LP(obj,lhs,oper,rhs,types=rep("I",ncol(shifts)))
+        #lp.model <- Rsymphony_solve_LP(obj,lhs,oper,rhs,types=rep("I",ncol(shifts)),first_feasible = FALSE,write_lp=TRUE)
+        lp.model$solution
+
     })
 
 
@@ -152,33 +161,22 @@ shinyServer(function(input, output) {
         if(length(unlist(read.csv(input$file$datapath,header = F))) != span)    return(NULL)
 
         #pass in derived variables and matrices
-        shift.length <- as.numeric(input$shift.length)
-        load <- unlist(read.csv(input$file$datapath,header = F))
+        results <- results.df()
         solutions <- solutions.df()
         shifts <- shifts.df()
 
 
         #Develop Load vs. Scheduled Capacity Plot
-        sched.cap <- rowSums(t(solutions * t(shifts)))
-        plot.input <- data.frame(Time = 1:span,
-                                 Excess_Servers = sched.cap,Required_Servers = load) %>%
-          melt(id.vars = 'Time',variable.name = 'Type',value.name = 'Value')
-
-        #Create Labels with Hours and Weekdays and assign custom colors
-        wd.list <- c('Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday')
-        labels <- c('')
-        for (i in wd.list) {
-            labels <- c(labels,i,'')
-        }
-        labels <- paste(c(rep(seq(0,23,12),7),0),labels,sep = '\n')
+        Excess_Servers <- rowSums(t(solutions * t(shifts)))-results$Servers
+        plot.input <- data.frame(select(results,Weekday,Hour,Required_Servers=Servers),Excess_Servers) %>%
+          melt(id.vars = c('Weekday','Hour'),variable.name = 'Type',value.name = 'Value')
         colors <- brewer.pal(12,'Set3')[c(5,12)]
-
-
         #generate plot for output
-        ggplot(plot.input,aes(Time,Value,fill=Type,color=Type)) + geom_density(stat="identity",alpha=.3) +
-          theme(text=element_text(size = 20)) + scale_fill_manual(values=colors,name="") +
-          scale_color_manual(values=colors,name="") +
-          scale_x_discrete(breaks = c(seq(1,168,12),168),labels = labels) + xlab(NULL) + ylab(NULL) +theme_bw()
+        ggplot(plot.input,aes(Hour,Value,fill=Type,color=Type)) + geom_bar(stat="identity",alpha=.3) +
+          theme(text=element_text(size = 20)) + facet_grid(Weekday ~ .,scales="free",margins=TRUE) +
+          scale_color_manual(values=colors,name="") + scale_fill_manual(values=colors,name="") +
+          theme_bw() + labs(title="Daily Comparison of Optimal Solution vs. Minimum Requirements") +
+          ylab(NULL) + scale_x_continuous(breaks=0:23)
 
     })
 
@@ -187,25 +185,38 @@ shinyServer(function(input, output) {
 
 
     output$mean_Wq <- renderText({
-      arrivals <- output$load.df()[['Arrival_Rate']]
+      if(is.null(input$file))     return(NULL)
+      #if(length(unlist(read.csv(input$file$datapath,header = F))) != span)    return(NULL)
+
+
+      arrivals <- results.df()$Arrival_Rate
       solutions <- solutions.df()
-      sched.cap <- sched.cap <- rowSums(t(solutions * t(shifts)))
+      shifts <- shifts.df()
+      sched.cap <- rowSums(t(solutions * t(shifts)))
       service_rate <- input$service_rate
 
       Wq <- mapply(function(x,y) NewInput.MMC(x,service_rate,y) %>%
                      QueueingModel.i_MMC() %>% Wq(),arrivals,sched.cap)
       results <- data.frame(Arrival_Rate = arrivals,sched.cap,Wq)
+
       paste('The average waiting time in queue is ',
-            as.numeric(summarize(results,sum(Wq*Arrival_Rate)/sum(Arrival_Rate))))
+           sprintf("%.2f",as.numeric(summarize(results,sum(Wq*Arrival_Rate)/sum(Arrival_Rate)))))
     })
 
 
 # Excess Capacity ---------------------------------------------------------
 
     output$excess_capacity <- renderText({
-    results <- output$load.df()
-    solutions <- solutions.df()
-    paste('The excess capacity is ',sum(results[['sched.cap']]-solutions))
+      if(is.null(input$file))     return(NULL)
+      #if(length(unlist(read.csv(input$file$datapath,header = F))) != span)    return(NULL)
+
+      results <- results.df()
+      solutions <- solutions.df()
+      shifts <- shifts.df()
+      sched.cap <- rowSums(t(solutions * t(shifts)))
+
+
+      paste('The excess capacity is ',sum(sched.cap-results[['Servers']]))
   })
 
 # Table Schedules ---------------------------------------------------------
@@ -217,17 +228,13 @@ shinyServer(function(input, output) {
         span <- 168
         solutions <- solutions.df()
         shifts <- shifts.df()
-        start <- as.numeric(input$start)
         shift.length <- as.numeric(input$shift.length)
         wd.list <- factor(c('Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'),
                           levels = c('Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'))
 
-        select <- as.numeric(c(input$start1,input$start2,input$start3,input$start4,
-                               input$start5,input$start6,input$start7))
-
         shift.times <- data.frame(Weekday = unlist(lapply(wd.list,function(x) rep(x,24))),
-                                  Shift.Start = paste(0:23,":00",sep = ''),
-                                  Shift.Length = sort(rep(shift.length,span)))[select,]
+                                  Shift.Start = paste0(0:23,":00"),
+                                  Shift.Length = sort(rep(shift.length,span)))
 
         schedule <- cbind(shift.times[solutions > 0,],N = solutions[solutions > 0])
         schedule <- schedule[order(schedule$Weekday),]
@@ -238,12 +245,24 @@ shinyServer(function(input, output) {
 
     })
 
+    output$table <- renderTable({
+      results <- results.df()
+      solutions <- solutions.df()
+      shifts <- shifts.df()
+      service_rate <- input$service_rate
+
+      Optimal_Servers <- rowSums(t(solutions * t(shifts)))
+
+      Optimal_Wq <- mapply(function(x,y) NewInput.MMC(x,service_rate,y) %>%
+                     QueueingModel.i_MMC() %>% Wq(),results[['Arrival_Rate']],Optimal_Servers)
+
+      output_table <- data.frame(results,Optimal_Servers,Optimal_Wq,row.names = NULL) %>%
+        rename(Required_Servers = Servers,Required_Wq = Wq)
+
+      xtable(output_table,type='html')
+    })
 
 })
 
 
-
-# testing ---------------------------------------------------------------------
-results <- data.frame(Arrival_Rate = arrivals,Servers = opt_servers,Wq)
-mean_Wq <- as.numeric(summarize(results,sum(Wq*Arrival_Rate)/sum(Arrival_Rate)))
 
