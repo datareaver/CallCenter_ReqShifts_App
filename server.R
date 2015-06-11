@@ -99,6 +99,11 @@ shinyServer(function(input, output) {
         rm(i)
         dimnames(shifts) <- NULL
 
+        #reduce to selected start times
+#         select <- as.numeric(c(input$start1,input$start2,input$start3,input$start4,
+#                                input$start5,input$start6,input$start7))
+#         shifts <- shifts[,select]
+
         shifts
 
     })
@@ -141,7 +146,7 @@ shinyServer(function(input, output) {
         int <- 1:ncol(shifts)
 
         #Solve LP
-        lp.model <- lp(direction = 'min',obj,lhs,oper,rhs,transpose.constraints = T,all.int=TRUE,compute.sens=0)
+        lp.model <- lp(direction = 'min',obj,lhs,oper,rhs,transpose.constraints = T,all.int=TRUE)
         #lp.model <- Rglpk_solve_LP(obj,lhs,oper,rhs,types=rep("I",ncol(shifts)))
         #lp.model <- Rsymphony_solve_LP(obj,lhs,oper,rhs,types=rep("I",ncol(shifts)),first_feasible = FALSE,write_lp=TRUE)
         lp.model$solution
@@ -222,7 +227,7 @@ shinyServer(function(input, output) {
 # Table Schedules ---------------------------------------------------------
 
     output$schedtext <- renderTable({
-        library(xtable)
+
         if(is.null(input$file))     return(NULL)
 
         span <- 168
@@ -246,6 +251,8 @@ shinyServer(function(input, output) {
     })
 
     output$table <- renderTable({
+      if(is.null(input$file))     return(NULL)
+
       results <- results.df()
       solutions <- solutions.df()
       shifts <- shifts.df()
