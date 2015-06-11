@@ -1,0 +1,8 @@
+name: ServiceCenter_ReqShifts_App
+account: troh
+server: shinyapps.io
+bundleId: 201620
+url: https://troh.shinyapps.io/ServiceCenter_ReqShifts_App
+when: 1434059034.00468
+asMultiple: FALSE
+asStatic: FALSE

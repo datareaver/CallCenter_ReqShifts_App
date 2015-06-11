@@ -10,6 +10,28 @@ shinyUI(fluidPage(them = shinytheme("flatly"),
       tabPanel('Main',
 
                sidebarPanel(
+
+                          h3('Description:'),
+
+                          p("This application takes hourly arrival rates and converts those numbers to the required number of
+                          servers needed for each hour based on the desired average waiting time in queue (MMC
+                          Queueing Theory). A mixed integer program is then used to find the optimal
+                          schedules for the service center. The optimization is constrained by the allowable shift length and
+                          shift start times."),
+
+                          h3('Instructions:'),
+
+                          p("Upload a csv file with a single column vector of 168 hourly arrivals. The starting point of the
+                          vector is Sunday 12:00 AM. Place '0's in intervals that have no arrivals or the center is closed."),
+
+                          p("Choose the possible length of shifts that you want to include."),
+
+                          p("Enter the desired maximum hourly average of waiting time in queue."),
+
+                          p("Enter the current rate of service."),
+
+                          p("Click on the 'Select Shifts' tab to control the possible shift start times."),
+
                           fileInput('file', h4('Choose CSV File containing Hourly Arrivals:'),
                                     accept=c('text/csv',
                                              'text/comma-separated-values,text/plain',
