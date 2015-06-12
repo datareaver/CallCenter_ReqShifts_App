@@ -99,11 +99,6 @@ shinyServer(function(input, output) {
         rm(i)
         dimnames(shifts) <- NULL
 
-        #reduce to selected start times
-#         select <- as.numeric(c(input$start1,input$start2,input$start3,input$start4,
-#                                input$start5,input$start6,input$start7))
-#         shifts <- shifts[,select]
-
         shifts
 
     })
@@ -123,6 +118,8 @@ shinyServer(function(input, output) {
 
         shift.length <- as.numeric(input$shift.length)
         load <- results.df()$Servers
+        starts <- as.numeric(c(input$start1,input$start2,input$start3,input$start4,
+                               input$start5,input$start6,input$start7))
 
         #Construct LP matrices
         #
@@ -136,6 +133,11 @@ shinyServer(function(input, output) {
 
         #diag is slack variable
         lhs <- shifts
+
+        #find columns that will not be turned off
+        select <- rep(0:(length(shift.length)-1)*span,each=length(starts)) + starts
+
+        lhs[,-select] <- 0
 
         oper <- rep('>=',nrow(shifts))
 
