@@ -125,13 +125,13 @@ shinyServer(function(input, output) {
         #
         #Objective:     min shifts
         #Constraints:   No. of Servers Scheduled >= Required Servers
-        #               Shift lengths constrained
+        #               Shift lengths constrained by user choice
+        #               Shift start times constrained by user choice
         #
         #
 
         shifts <- shifts.df()
 
-        #diag is slack variable
         lhs <- shifts
 
         #find columns that will not be turned off
