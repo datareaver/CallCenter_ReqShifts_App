@@ -32,10 +32,18 @@ shinyUI(fluidPage(them = shinytheme("flatly"),
 
                           p("Click on the 'Select Shifts' tab to control the possible shift start times."),
 
+                          #p("If you receive the error--(lambda/(mu*c) ) has to be less than one!!'", increase the service),
+
                           fileInput('file', h4('Choose CSV File containing Hourly Arrivals:'),
                                     accept=c('text/csv',
                                              'text/comma-separated-values,text/plain',
                                              '.csv')),
+
+                          downloadButton("example_load","Download Example File"),
+
+                          br(),
+
+                          br(),
 
                           numericInput('waiting_time','Desired Maximum Average Waiting Time in Queue',value=1,min=0,step=.5),
 

@@ -7,6 +7,33 @@ library(shiny)
 library(queueing)
 library(xtable)
 
+handle_zero_queues <- function(x,y) {
+  if (x != 0) {
+    NewInput.MMC(x,service_rate,y) %>%
+      QueueingModel.i_MMC() %>%
+      Wq()
+  } else 0
+}
+
+span <- 168 #based on week sub units for arrivals
+
+set.seed(82) #makes download example file consistent
+
+Weekday <- ordered(c('Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'),
+                   levels = c('Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'))
+Hour <- ordered(c('0:00','0:30','1:00','1:30','2:00','2:30','3:00','3:30','4:00','4:30',
+                '5:00','5:30','6:00','6:30','7:00','7:30','8:00','8:30','9:00','9:30',
+                '10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30','14:00',
+                '14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30',
+                '19:00','19:30','20:00','20:30','21:00','21:30','22:00','22:30','23:00',
+                '23:30'),levels = c('0:00','0:30','1:00','1:30','2:00','2:30','3:00','3:30','4:00','4:30',
+                                    '5:00','5:30','6:00','6:30','7:00','7:30','8:00','8:30','9:00','9:30',
+                                    '10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30','14:00',
+                                    '14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30',
+                                    '19:00','19:30','20:00','20:30','21:00','21:30','22:00','22:30','23:00',
+                                    '23:30'))
+
+
 # Reactive Data
 # results.df
 # shifts.df
@@ -23,25 +50,33 @@ shinyServer(function(input, output) {
 
 # MMC Queue Server Calculations -------------------------------------------
 
+    output$example_load <- downloadHandler(
+
+
+      filename = function() {
+        paste("example","csv", sep = ".")
+      },
+
+      content = function(file) {
+        # Write to a file specified by the 'file' argument
+        example_load <- unlist(lapply(rep(c(2,5,9,15,11,9,8,5),7),rpois,n=3))
+        example_load[example_load == 0] <- 1
+        write.table(example_load, file,sep=",",row.names = FALSE,col.names = FALSE)
+      }
+
+
+    )
+
 
     #Construct the shifts based on inputs
     results.df <- reactive({
+
+
       waiting_time <- input$waiting_time
       service_rate <- input$service_rate
-      arrivals <- unlist(read.csv(input$file$datapath,header=F))
-      Weekday <- factor(c('Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'),
-                        levels = c('Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'))
-      Hour = factor(c('0:00','0:30','1:00','1:30','2:00','2:30','3:00','3:30','4:00','4:30',
-                      '5:00','5:30','6:00','6:30','7:00','7:30','8:00','8:30','9:00','9:30',
-                      '10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30','14:00',
-                      '14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30',
-                      '19:00','19:30','20:00','20:30','21:00','21:30','22:00','22:30','23:00',
-                      '23:30'),levels = c('0:00','0:30','1:00','1:30','2:00','2:30','3:00','3:30','4:00','4:30',
-                                    '5:00','5:30','6:00','6:30','7:00','7:30','8:00','8:30','9:00','9:30',
-                                    '10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30','14:00',
-                                    '14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30',
-                                    '19:00','19:30','20:00','20:30','21:00','21:30','22:00','22:30','23:00',
-                                    '23:30'))
+      #if(is.null(input$file)) { arrivals <- unlist(lapply(rep(c(2,5,9,15,11,9,8,5),8),rpois,n=6))
+      #  } else arrivals <- unlist(read.csv(input$file$datapath,header=F))
+      arrivals <- unlist(read.csv(input$file$datapath,header=F)[1:span,])
 
       opt_servers <- vector(mode="integer",length(arrivals))
       Wq <- vector(mode="numeric",length(arrivals))
@@ -49,14 +84,21 @@ shinyServer(function(input, output) {
       #calculate optimal servers
       for (arrival in arrivals) {
 
-        min_servers <- ceiling(arrival/service_rate)
+        min_servers <- (arrival %/% service_rate) + (arrival > 0)
         opt_server <- min_servers
         mmc_Wq <- waiting_time
 
         repeat {
-          mmc_input <- NewInput.MMC(arrival,service_rate,c=opt_server)
-          mmc <- QueueingModel.i_MMC(mmc_input)
-          mmc_Wq <- Wq(mmc)
+
+          if (opt_server != 0) {
+            mmc_input <- NewInput.MMC(arrival,service_rate,c=opt_server)
+            mmc <- QueueingModel.i_MMC(mmc_input)
+            mmc_Wq <- Wq(mmc)
+          } else {
+            mmc_Wq <- 0
+            break
+          }
+
           if (mmc_Wq < waiting_time) break
           opt_server <- opt_server + 1
         }
@@ -65,7 +107,10 @@ shinyServer(function(input, output) {
         Wq[i] <- mmc_Wq
         i <- i + 1
       }
+
       data.frame(Weekday=rep(Weekday,each=24),Hour=rep(0:23,7),Arrival_Rate = arrivals,Servers = opt_servers,Wq)
+
+
     })
 
 
@@ -74,14 +119,12 @@ shinyServer(function(input, output) {
 
 
     shifts.df <- reactive({
-        span <- 168
+
 
         if(is.null(input$file))     return(NULL)
-        if(length(unlist(read.csv(input$file$datapath,header = F))) != span)    return(NULL)
+        #if(length(unlist(read.csv(input$file$datapath,header = F))) != span)    return(NULL)
 
         shift.length <- as.numeric(input$shift.length)
-
-
 
         #construct shift matrices
         shift.build <- c()
@@ -101,6 +144,7 @@ shinyServer(function(input, output) {
 
         shifts
 
+
     })
 
 
@@ -111,10 +155,8 @@ shinyServer(function(input, output) {
     solutions.df <- reactive({
 
 
-        span <- 168
         if(is.null(input$file))     return(NULL)
-        if(length(unlist(read.csv(input$file$datapath,header = F))) != span)    return(NULL)
-
+        #if(length(unlist(read.csv(input$file$datapath,header = F))) != span)    return(NULL)
 
         shift.length <- as.numeric(input$shift.length)
         load <- results.df()$Servers
@@ -153,6 +195,7 @@ shinyServer(function(input, output) {
         #lp.model <- Rsymphony_solve_LP(obj,lhs,oper,rhs,types=rep("I",ncol(shifts)),first_feasible = FALSE,write_lp=TRUE)
         lp.model$solution
 
+
     })
 
 
@@ -163,9 +206,8 @@ shinyServer(function(input, output) {
     output$loadplot <- renderPlot({
 
 
-        span <- 168
         if(is.null(input$file))     return(NULL)
-        if(length(unlist(read.csv(input$file$datapath,header = F))) != span)    return(NULL)
+        #if(length(unlist(read.csv(input$file$datapath,header = F))) != span)    return(NULL)
 
         #pass in derived variables and matrices
         results <- results.df()
@@ -185,6 +227,7 @@ shinyServer(function(input, output) {
           theme_bw() + labs(title="Daily Comparison of Optimal Solution vs. Minimum Requirements") +
           ylab(NULL) + scale_x_continuous(breaks=0:23)
 
+
     })
 
 
@@ -192,6 +235,8 @@ shinyServer(function(input, output) {
 
 
     output$mean_Wq <- renderText({
+
+
       if(is.null(input$file))     return(NULL)
       #if(length(unlist(read.csv(input$file$datapath,header = F))) != span)    return(NULL)
 
@@ -199,40 +244,47 @@ shinyServer(function(input, output) {
       arrivals <- results.df()$Arrival_Rate
       solutions <- solutions.df()
       shifts <- shifts.df()
-      sched.cap <- rowSums(t(solutions * t(shifts)))
+      optimal_servers <- rowSums(t(solutions * t(shifts)))
       service_rate <- input$service_rate
 
-      Wq <- mapply(function(x,y) NewInput.MMC(x,service_rate,y) %>%
-                     QueueingModel.i_MMC() %>% Wq(),arrivals,sched.cap)
-      results <- data.frame(Arrival_Rate = arrivals,sched.cap,Wq)
+      Wq <- mapply(handle_zero_queues,x=arrivals,y=optimal_servers)
+
+      results <- data.frame(Arrival_Rate = arrivals,optimal_servers,Wq)
 
       paste('The average waiting time in queue is ',
            sprintf("%.2f",as.numeric(summarize(results,sum(Wq*Arrival_Rate)/sum(Arrival_Rate)))))
+
+
     })
 
 
 # Excess Capacity ---------------------------------------------------------
 
     output$excess_capacity <- renderText({
+
+
       if(is.null(input$file))     return(NULL)
       #if(length(unlist(read.csv(input$file$datapath,header = F))) != span)    return(NULL)
 
       results <- results.df()
       solutions <- solutions.df()
       shifts <- shifts.df()
-      sched.cap <- rowSums(t(solutions * t(shifts)))
+      optimal_servers <- rowSums(t(solutions * t(shifts)))
 
 
-      paste('The excess capacity is ',sum(sched.cap-results[['Servers']]))
+      paste('The excess capacity is ',sum(optimal_servers-results[['Servers']]))
+
+
   })
 
 # Table Schedules ---------------------------------------------------------
 
     output$schedtext <- renderTable({
 
+
+
         if(is.null(input$file))     return(NULL)
 
-        span <- 168
         solutions <- solutions.df()
         shifts <- shifts.df()
         shift.length <- as.numeric(input$shift.length)
@@ -249,26 +301,29 @@ shinyServer(function(input, output) {
         xtable(schedule,type = 'html')
 
 
-
     })
 
     output$table <- renderTable({
+
+
       if(is.null(input$file))     return(NULL)
 
       results <- results.df()
+      arrivals <- results.df()$Arrival_Rate
       solutions <- solutions.df()
       shifts <- shifts.df()
       service_rate <- input$service_rate
 
-      Optimal_Servers <- rowSums(t(solutions * t(shifts)))
+      optimal_servers <- rowSums(t(solutions * t(shifts)))
 
-      Optimal_Wq <- mapply(function(x,y) NewInput.MMC(x,service_rate,y) %>%
-                     QueueingModel.i_MMC() %>% Wq(),results[['Arrival_Rate']],Optimal_Servers)
+      optimal_Wq <- mapply(handle_zero_queues,x=arrivals,y=optimal_servers)
 
-      output_table <- data.frame(results,Optimal_Servers,Optimal_Wq,row.names = NULL) %>%
+      output_table <- data.frame(results,Optimal_Servers=optimal_servers,Optimal_Wq=optimal_Wq,row.names = NULL) %>%
         rename(Required_Servers = Servers,Required_Wq = Wq)
 
       xtable(output_table,type='html')
+
+
     })
 
 })
